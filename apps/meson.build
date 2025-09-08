@@ -1,3 +1,7 @@
+fmt_dep = dependency('fmt')
+
+
+
 rpicam_still = executable('rpicam-still', files('rpicam_still.cpp'),
                           include_directories : include_directories('..'),
                           dependencies: [libcamera_dep, boost_dep],
@@ -10,9 +14,9 @@ rpicam_vid = executable('rpicam-vid', files('rpicam_vid.cpp'),
                         link_with : rpicam_app,
                         install : true)
 
-rpicam_hello = executable('rpicam-hello', files('rpicam_hello.cpp'),
+rpicam_hello = executable('rpicam-hello', files('rpicam_hello.cpp', 'sharedContextStage.cpp'),
                           include_directories : include_directories('..'),
-                          dependencies: libcamera_dep,
+                          dependencies: [libcamera_dep, fmt_dep],
                           link_with : rpicam_app,
                           install : true)
 
