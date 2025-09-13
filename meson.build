@@ -100,6 +100,7 @@ summary({
             'libav encoder' : enable_libav,
             'drm preview' : enable_drm,
             'egl preview' : enable_egl,
+            'sdl preview' : enable_sdl,
             'qt preview' : enable_qt,
             'OpenCV postprocessing' : enable_opencv,
             'TFLite postprocessing' : enable_tflite,

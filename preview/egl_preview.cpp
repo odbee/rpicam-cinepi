@@ -23,8 +23,15 @@
 // We do use None, so if we had to #undefine it we could replace it by zero
 // in what follows below.
 
-#include <epoxy/egl.h>
-#include <epoxy/gl.h>
+// #include <epoxy/egl.h>
+// #include <epoxy/gl.h>
+
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+#include <GLES3/gl31.h>
+
+#include <GLES2/gl2ext.h> // this is correct
+
 
 class EglPreview : public Preview
 {
@@ -367,6 +374,7 @@ void EglPreview::makeBuffer(int fd, size_t size, StreamInfo const &info, Buffer 
 		gl_setup(info.width, info.height, width_, height_);
 		first_time_ = false;
 	}
+	// printf("MAKING BUFFER");
 
 	buffer.fd = fd;
 	buffer.size = size;
@@ -393,9 +401,27 @@ void EglPreview::makeBuffer(int fd, size_t size, StreamInfo const &info, Buffer 
 		EGL_NONE
 	};
 
+
+	const char* vendor = eglQueryString(egl_display_, EGL_VENDOR);
+	const char* version = eglQueryString(egl_display_, EGL_VERSION);
+
+	std::cout << "Vendor: " << vendor << "\n";
+	std::cout << "Version: " << version << "\n";
+
+	PFNEGLCREATEIMAGEKHRPROC eglCreateImageKHR = nullptr;
+    eglCreateImageKHR = reinterpret_cast<PFNEGLCREATEIMAGEKHRPROC>(eglGetProcAddress("eglCreateImageKHR"));
+
 	EGLImage image = eglCreateImageKHR(egl_display_, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, NULL, attribs);
 	if (!image)
 		throw std::runtime_error("failed to import fd " + std::to_string(fd));
+
+		
+    PFNGLEGLIMAGETARGETTEXTURE2DOESPROC glEGLImageTargetTexture2DOES = nullptr;
+    glEGLImageTargetTexture2DOES = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(eglGetProcAddress("glEGLImageTargetTexture2DOES"));
+
+	
+    PFNEGLDESTROYIMAGEKHRPROC eglDestroyImageKHR = nullptr;
+    eglDestroyImageKHR = reinterpret_cast<PFNEGLDESTROYIMAGEKHRPROC>(eglGetProcAddress("eglDestroyImageKHR"));
 
 	glGenTextures(1, &buffer.texture);
 	glBindTexture(GL_TEXTURE_EXTERNAL_OES, buffer.texture);

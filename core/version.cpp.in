@@ -28,6 +28,7 @@ const char *RPiCamAppsCapabilities(const std::string &preview_libs, const std::s
 
 	static const std::string caps = 
 		"egl:" + std::to_string(p.HasPreview("egl")) + 
+		"sdl:" + std::to_string(p.HasPreview("sdl")) + 
 		" qt:" + std::to_string(p.HasPreview("qt")) +
 		" drm:" + std::to_string(p.HasPreview("drm")) +
 		" libav:" + std::to_string(e.HasEncoder("libav"));

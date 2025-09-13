@@ -29,12 +29,12 @@ endif
 
 enable_egl = false
 x11_deps = dependency('x11', required : get_option('enable_egl'))
-epoxy_deps = dependency('epoxy', required : get_option('enable_egl'))
-
-if x11_deps.found() and epoxy_deps.found()
+egl_deps= dependency('egl', required:get_option('enable_egl'))
+gles_deps=dependency('opengl', required:get_option('enable_egl'))
+if x11_deps.found() 
     egl_lib = shared_module('egl-preview', files('egl_preview.cpp'),
                             include_directories : '../',
-                            dependencies : [x11_deps, epoxy_deps, libcamera_dep],
+                            dependencies : [x11_deps, egl_deps, gles_deps,libcamera_dep],
                             cpp_args : cpp_arguments,
                             install : true,
                             install_dir: preview_libdir,
@@ -43,6 +43,28 @@ if x11_deps.found() and epoxy_deps.found()
     conf_data.set('LIBEGL_PRESENT', 1)
     enable_egl = true
 endif
+
+enable_sdl = false
+x11_deps = dependency('x11', required : get_option('enable_sdl'))
+egl_deps= dependency('egl', required:get_option('enable_sdl'))
+gles_deps=dependency('opengl', required:get_option('enable_sdl'))
+sdl_deps=dependency('sdl2', required:get_option('enable_sdl'))
+if x11_deps.found() 
+    sdl_lib = shared_module('sdl-preview', files('sdl_preview.cpp'),
+                            include_directories : '../',
+                            dependencies : [x11_deps, egl_deps, gles_deps,libcamera_dep,sdl_deps],
+                            cpp_args : cpp_arguments,
+                            install : true,
+                            install_dir: preview_libdir,
+                            name_prefix : '',
+    )
+    conf_data.set('LIBEGL_PRESENT', 1)
+    enable_sdl = true
+endif
+
+
+
+
 
 enable_qt = false
 qt_dep = dependency('qt5', modules : ['Core', 'Widgets'], required : get_option('enable_qt'))

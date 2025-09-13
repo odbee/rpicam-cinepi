@@ -89,28 +89,41 @@ Preview *make_preview(Options const *options)
 	{
 		try
 		{
-			if (factory.HasPreview("egl"))
+			LOG(1, "trying sdl");
+			if (factory.HasPreview("sdl"))
 			{
-				LOG(1, "Made X/EGL preview window");
-				return factory.CreatePreview("egl")(options);
+				LOG(1, "Made SDL preview window");
+				return factory.CreatePreview("sdl")(options);
 			}
-			throw std::runtime_error("egl libraries unavailable.");
+			throw std::runtime_error("SDL libraries unavailable.");
 		}
 		catch (std::exception const &e)
 		{
 			try
 			{
-				if (factory.HasPreview("drm"))
+				if (factory.HasPreview("egl"))
 				{
-					LOG(1, "Made DRM preview window");
-					return factory.CreatePreview("drm")(options);
+					LOG(1, "Made X/EGL preview window");
+					return factory.CreatePreview("egl")(options);
 				}
-				throw std::runtime_error("drm libraries unavailable.");
+				throw std::runtime_error("egl libraries unavailable.");
 			}
 			catch (std::exception const &e)
 			{
-				LOG(1, "Preview window unavailable");
-				return factory.CreatePreview("null")(options);
+				try
+				{
+					if (factory.HasPreview("drm"))
+					{
+						LOG(1, "Made DRM preview window");
+						return factory.CreatePreview("drm")(options);
+					}
+					throw std::runtime_error("drm libraries unavailable.");
+				}
+				catch (std::exception const &e)
+				{
+					LOG(1, "Preview window unavailable");
+					return factory.CreatePreview("null")(options);
+				}
 			}
 		}
 	}

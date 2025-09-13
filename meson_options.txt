@@ -13,6 +13,12 @@ option('enable_egl',
         value : 'auto',
         description : 'Enable EGL preview window support')
 
+option('enable_sdl',
+        type : 'feature',
+        value : 'auto',
+        description : 'Enable SDL preview window support')
+
+
 option('enable_qt',
         type : 'feature',
         value : 'auto',
