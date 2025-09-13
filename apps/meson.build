@@ -14,7 +14,7 @@ rpicam_vid = executable('rpicam-vid', files('rpicam_vid.cpp'),
                         link_with : rpicam_app,
                         install : true)
 
-rpicam_hello = executable('rpicam-hello', files('rpicam_hello.cpp', 'sharedContextStage.cpp'),
+rpicam_hello = executable('rpicam-hello', files('rpicam_hello.cpp', 'sharedContextStage.cpp', 'share_stream_info_stage.cpp'),
                           include_directories : include_directories('..'),
                           dependencies: [libcamera_dep, fmt_dep],
                           link_with : rpicam_app,
