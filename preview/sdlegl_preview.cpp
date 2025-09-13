@@ -28,6 +28,7 @@
 
 #include <SDL2/SDL.h>
 
+#define SDL_ENABLED 1  // or pass -DSDL_ENABLED=1 via compiler
 
 
 GLchar* checkStatus(GLuint objectID, PFNGLGETSHADERIVPROC objectPropertyGetterFunc, PFNGLGETSHADERINFOLOGPROC getInfoLogFunc, GLenum statusType)
@@ -72,6 +73,52 @@ bool checkProgramStatus(GLuint programID, const char* type)
     return true;
 }  
 
+
+static void no_border(Display *display, Window window)
+{
+	static const unsigned MWM_HINTS_DECORATIONS = (1 << 1);
+	static const int PROP_MOTIF_WM_HINTS_ELEMENTS = 5;
+
+	typedef struct
+	{
+		unsigned long flags;
+		unsigned long functions;
+		unsigned long decorations;
+		long inputMode;
+		unsigned long status;
+	} PropMotifWmHints;
+
+	PropMotifWmHints motif_hints;
+	Atom prop, proptype;
+	unsigned long flags = 0;
+
+	/* setup the property */
+	motif_hints.flags = MWM_HINTS_DECORATIONS;
+	motif_hints.decorations = flags;
+
+	/* get the atom for the property */
+	prop = XInternAtom(display, "_MOTIF_WM_HINTS", True);
+	if (!prop)
+	{
+		/* something went wrong! */
+		return;
+	}
+
+	/* not sure this is correct, seems to work, XA_WM_HINTS didn't work */
+	proptype = prop;
+
+	XChangeProperty(display, window, /* display, window */
+					prop, proptype, /* property, type */
+					32, /* format: 32-bit datums */
+					PropModeReplace, /* mode */
+					(unsigned char *)&motif_hints, /* data */
+					PROP_MOTIF_WM_HINTS_ELEMENTS /* nelements */
+	);
+}
+
+
+
+
 class SdlPreview : public Preview
 {
 public:
@@ -103,20 +150,29 @@ private:
 	};	
 	void makeSDLWindow(char const *name, int selected_display=0);
 	
+	void makeEGLWindow(char const *name);
+
+
+
+
+	
+	
 
 	void makeBuffer(int fd, size_t size, StreamInfo const &info, Buffer &buffer);
 	::
 	Display *display_;
 	EGLDisplay egl_display_;
-
+	Window window_;
 	EGLContext egl_context_;
 	EGLSurface egl_surface_;
 	std::map<int, Buffer> buffers_; // map the DMABUF's fd to the Buffer
 	int last_fd_;
 	bool first_time_;
 	// size of preview window
+
 	GLuint VAO, VBO, EBO;
 	void gl_setup(int width, int height, int window_width, int window_height);
+	Atom wm_delete_window_;
 	// size of preview window
 	int x_;
 	int y_;
@@ -237,13 +293,126 @@ void SdlPreview::gl_setup(int width, int height, int window_width, int window_he
 }
 
 
+void SdlPreview::makeEGLWindow(char const *name)
+{
+	int screen_num = DefaultScreen(display_);
+	XSetWindowAttributes attr;
+	unsigned long mask;
+	Window root = RootWindow(display_, screen_num);
+	int screen_width = DisplayWidth(display_, screen_num);
+	int screen_height = DisplayHeight(display_, screen_num);
+
+	// Default behaviour here is to use a 1024x768 window.
+	if (width_ == 0 || height_ == 0)
+	{
+		width_ = 1024;
+		height_ = 768;
+	}
+
+	if (options_->Get().fullscreen || x_ + width_ > screen_width || y_ + height_ > screen_height)
+	{
+		x_ = y_ = 0;
+		width_ = DisplayWidth(display_, screen_num);
+		height_ = DisplayHeight(display_, screen_num);
+	}
+
+	width_=300;
+	height_=300;
+	
+	static const EGLint attribs[] =
+		{
+			EGL_RED_SIZE, 1,
+			EGL_GREEN_SIZE, 1,
+			EGL_BLUE_SIZE, 1,
+			EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+			EGL_NONE
+		};
+	EGLConfig config;
+	EGLint num_configs;
+	if (!eglChooseConfig(egl_display_, attribs, &config, 1, &num_configs))
+		throw std::runtime_error("couldn't get an EGL visual config");
+
+	EGLint vid;
+	if (!eglGetConfigAttrib(egl_display_, config, EGL_NATIVE_VISUAL_ID, &vid))
+		throw std::runtime_error("eglGetConfigAttrib() failed\n");
+
+	XVisualInfo visTemplate = {};
+	visTemplate.visualid = (VisualID)vid;
+	int num_visuals;
+	XVisualInfo *visinfo = XGetVisualInfo(display_, VisualIDMask, &visTemplate, &num_visuals);
+
+	/* window attributes */
+	attr.background_pixel = 0;
+	attr.border_pixel = 0;
+	attr.colormap = XCreateColormap(display_, root, visinfo->visual, AllocNone);
+	attr.event_mask = StructureNotifyMask | ExposureMask | KeyPressMask;
+	/* XXX this is a bad way to get a borderless window! */
+	mask = CWBackPixel | CWBorderPixel | CWColormap | CWEventMask;
+
+	window_ = XCreateWindow(display_, root, x_, y_, width_, height_, 0, visinfo->depth, InputOutput, visinfo->visual,
+							mask, &attr);
+
+	if (options_->Get().fullscreen)
+		no_border(display_, window_);
+
+	/* set hints and properties */
+	{
+		XSizeHints sizehints;
+		sizehints.x = x_;
+		sizehints.y = y_;
+		sizehints.width = width_;
+		sizehints.height = height_;
+		sizehints.flags = USSize | USPosition;
+		XSetNormalHints(display_, window_, &sizehints);
+		XSetStandardProperties(display_, window_, name, name, None, (char **)NULL, 0, &sizehints);
+	}
+
+	eglBindAPI(EGL_OPENGL_ES_API);
+
+	static const EGLint ctx_attribs[] = {
+		EGL_CONTEXT_CLIENT_VERSION, 2,
+		EGL_NONE
+	};
+	egl_context_ = eglCreateContext(egl_display_, config, EGL_NO_CONTEXT, ctx_attribs);
+	if (!egl_context_)
+		throw std::runtime_error("eglCreateContext failed");
+
+	XFree(visinfo);
+
+	XMapWindow(display_, window_);
+
+	// This stops the window manager from closing the window, so we get an event instead.
+	wm_delete_window_ = XInternAtom(display_, "WM_DELETE_WINDOW", False);
+	XSetWMProtocols(display_, window_, &wm_delete_window_, 1);
+
+	egl_surface_ = eglCreateWindowSurface(egl_display_, config, reinterpret_cast<EGLNativeWindowType>(window_), NULL);
+	if (!egl_surface_)
+		throw std::runtime_error("eglCreateWindowSurface failed");
+
+	// We have to do eglMakeCurrent in the thread where it will run, but we must do it
+	// here temporarily so as to get the maximum texture size.
+	eglMakeCurrent(egl_display_, EGL_NO_SURFACE, EGL_NO_SURFACE, egl_context_);
+	int max_texture_size = 0;
+	glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size);
+	max_image_width_ = max_image_height_ = max_texture_size;
+	// This "undoes" the previous eglMakeCurrent.
+	eglMakeCurrent(egl_display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+}
+
 SdlPreview::SdlPreview(Options const *options) : Preview(options), last_fd_(-1), first_time_(true)
 {
+
+
+	#ifdef SDL_ENABLED
 	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
         throw std::runtime_error("Failed to initialize SDL");
     }
+
+
+	
 	// makeSDLWindow("my sdl window");
+
 	// SDL_ShowWindow(sdl_window);
 	// SDL_RaiseWindow(sdl_window);
 	// SDL_SetWindowPosition(sdl_window, 100, 100); 
@@ -251,11 +420,33 @@ SdlPreview::SdlPreview(Options const *options) : Preview(options), last_fd_(-1),
 	
 	// printf("Window should now be visible\n");
 
+	#else
+		display_ = XOpenDisplay(NULL);
+		if (!display_)
+			throw std::runtime_error("Couldn't open X display");
+
+		egl_display_ = eglGetDisplay(display_);
+		if (!egl_display_)
+			throw std::runtime_error("eglGetDisplay() failed");
+
+		EGLint egl_major, egl_minor;
+
+		if (!eglInitialize(egl_display_, &egl_major, &egl_minor))
+			throw std::runtime_error("eglInitialize() failed");
+
+		x_ = options_->Get().preview_x;
+		y_ = options_->Get().preview_y;
+		width_ = options_->Get().preview_width;
+		height_ = options_->Get().preview_height;
+		makeEGLWindow("rpicam-app");
+	#endif
+
 }
 
 SdlPreview::~SdlPreview()
 {
-	printf("DESTROYING CONTEXT AND WINDOW\n");
+	    printf("DESTROYING CONTEXT AND WINDOW\n");
+
 	SdlPreview::Reset();
 	SDL_GL_DeleteContext(sdl_context);
     SDL_DestroyWindow(sdl_window);
@@ -354,6 +545,8 @@ void SdlPreview::makeBuffer(int fd, size_t size, StreamInfo const &info, Buffer 
 {
 
 	printf("MAKING buffer with fd %d ", fd);
+    
+
 	buffer.fd = fd;
 	buffer.size = size;
 	buffer.info = info;
@@ -378,19 +571,25 @@ void SdlPreview::makeBuffer(int fd, size_t size, StreamInfo const &info, Buffer 
 		EGL_SAMPLE_RANGE_HINT_EXT, range,
 		EGL_NONE
 	};
+
+
 	const char* vendor = eglQueryString(egl_display_, EGL_VENDOR);
 	const char* version = eglQueryString(egl_display_, EGL_VERSION);
+
 	std::cout << "Vendor: " << vendor << "\n";
 	std::cout << "Version: " << version << "\n";
 
+
 	PFNEGLCREATEIMAGEKHRPROC eglCreateImageKHR = nullptr;
     eglCreateImageKHR = reinterpret_cast<PFNEGLCREATEIMAGEKHRPROC>(eglGetProcAddress("eglCreateImageKHR"));
+
+
 
 	EGLImage image = eglCreateImageKHR(egl_display_, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, NULL, attribs);
 	if (!image)
 		throw std::runtime_error("failed to import fd " + std::to_string(fd));
 
-	
+		
     PFNGLEGLIMAGETARGETTEXTURE2DOESPROC glEGLImageTargetTexture2DOES = nullptr;
     glEGLImageTargetTexture2DOES = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(eglGetProcAddress("glEGLImageTargetTexture2DOES"));
 
@@ -411,9 +610,13 @@ void SdlPreview::makeBuffer(int fd, size_t size, StreamInfo const &info, Buffer 
 
 void SdlPreview::SetInfoText(const std::string &text)
 {
+	#ifdef SDL_ENABLED
 		if (!text.empty())
 			SDL_SetWindowTitle(sdl_window, text.c_str());
-
+	#else 
+		if (!text.empty())
+			XStoreName(display_, window_, text.c_str());
+	#endif
 	
 }
 
@@ -423,40 +626,52 @@ void SdlPreview::Show(int fd, libcamera::Span<uint8_t> span, StreamInfo const &i
 	Buffer &buffer = buffers_[fd];
 	if (first_time_)
 	{
-		makeSDLWindow("my sdl window");
+		#ifdef SDL_ENABLED
+			makeSDLWindow("my sdl window");
 
-		SDL_ShowWindow(sdl_window);
-		SDL_RaiseWindow(sdl_window);
-		SDL_SetWindowPosition(sdl_window, 100, 100); 
-		SDL_UpdateWindowSurface(sdl_window);
-		
-		printf("Window should now be visible\n");
-		
-		sdl_workercontext = SDL_GL_CreateContext(sdl_window);
-		if (!sdl_workercontext) {
-			std::cerr << "(SDL_WORKERCONTEXT) OpenGL context could not be created! SDL_Error: " << SDL_GetError() << std::endl;
-			SDL_DestroyWindow(sdl_window);
-			SDL_Quit();
-			throw std::runtime_error("Failed to create OpenGL context");
-		}
-		if (SDL_GL_MakeCurrent(sdl_window, sdl_workercontext) != 0) {
-			std::cerr << "SDL_GL_MakeCurrent failed: " << SDL_GetError() << std::endl;
-			throw std::runtime_error("SDL_GL_MakeCurrent failed: " + std::string(SDL_GetError()));
-		}
+			SDL_ShowWindow(sdl_window);
+			SDL_RaiseWindow(sdl_window);
+			SDL_SetWindowPosition(sdl_window, 100, 100); 
+			SDL_UpdateWindowSurface(sdl_window);
+			
+			printf("Window should now be visible\n");
+			
+			sdl_workercontext = SDL_GL_CreateContext(sdl_window);
+			if (!sdl_workercontext) {
+				std::cerr << "(SDL_WORKERCONTEXT) OpenGL context could not be created! SDL_Error: " << SDL_GetError() << std::endl;
+				SDL_DestroyWindow(sdl_window);
+				SDL_Quit();
+				throw std::runtime_error("Failed to create OpenGL context");
+			}
+			if (SDL_GL_MakeCurrent(sdl_window, sdl_workercontext) != 0) {
+				std::cerr << "SDL_GL_MakeCurrent failed: " << SDL_GetError() << std::endl;
+				throw std::runtime_error("SDL_GL_MakeCurrent failed: " + std::string(SDL_GetError()));
+			}
 
-		gl_setup(info.width, info.height, width_, height_);
-		first_time_ = false;
-
+			gl_setup(info.width, info.height, width_, height_);
+			first_time_ = false;
+		#else 
+			if (!eglMakeCurrent(egl_display_, egl_surface_, egl_surface_, egl_context_))
+				throw std::runtime_error("eglMakeCurrent failed");
+			gl_setup(info.width, info.height, width_, height_);
+			first_time_ = false;
+		#endif
 
 	}
 
 	if (buffer.fd == -1)
 		makeBuffer(fd, span.size(), info, buffer);
+
 	glClearColor(1, 0, 0, 0);
 	glClear(GL_COLOR_BUFFER_BIT);
+
 	glBindTexture(GL_TEXTURE_EXTERNAL_OES, buffer.texture);
 	glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-	SDL_GL_SwapWindow(sdl_window);
+	#ifdef SDL_ENABLED
+		SDL_GL_SwapWindow(sdl_window);
+	#else 
+		EGLBoolean success [[maybe_unused]] = eglSwapBuffers(egl_display_, egl_surface_);
+	#endif
 
 	if (last_fd_ >= 0)
 		done_callback_(last_fd_);
@@ -467,30 +682,44 @@ void SdlPreview::Reset()
 {
 	for (auto &it : buffers_)
 		glDeleteTextures(1, &it.second.texture);
+	
 	buffers_.clear();
 	last_fd_ = -1;
+	#ifdef SDL_ENABLED
+ 		// SDL code would go here
+	#else 
+		EGLBoolean success [[maybe_unused]] = eglSwapBuffers(egl_display_, egl_surface_);
+	#endif
 	first_time_ = true;
 }
 
 bool SdlPreview::Quit()
 {
-	SDL_Event event;
-	Uint32 windowID = SDL_GetWindowID(sdl_window);
+	#ifdef SDL_ENABLED
+ 		SDL_Event event;
+		Uint32 windowID = SDL_GetWindowID(sdl_window);
 
-	// Drain all pending events
-	while (SDL_PollEvent(&event)) {
-		// Global quit (like WM_DELETE_WINDOW at app level)
-		if (event.type == SDL_QUIT)
-			return true;
+		// Drain all pending events
+		while (SDL_PollEvent(&event)) {
+			// Global quit (like WM_DELETE_WINDOW at app level)
+			if (event.type == SDL_QUIT)
+				return true;
 
-		// Per-window close request (exact window match)
-		if (event.type == SDL_WINDOWEVENT &&
-			event.window.event == SDL_WINDOWEVENT_CLOSE &&
-			event.window.windowID == windowID) {
-			return true;
+			// Per-window close request (exact window match)
+			if (event.type == SDL_WINDOWEVENT &&
+				event.window.event == SDL_WINDOWEVENT_CLOSE &&
+				event.window.windowID == windowID) {
+				return true;
+			}
 		}
-	}
-
+	#else 
+		XEvent event;
+		while (XCheckTypedWindowEvent(display_, window_, ClientMessage, &event))
+		{
+			if (static_cast<Atom>(event.xclient.data.l[0]) == wm_delete_window_)
+				return true;
+		}
+	#endif
 	return false;
 }
 
