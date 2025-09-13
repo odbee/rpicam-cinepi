@@ -102,15 +102,9 @@ private:
 		GLuint texture;
 	};	
 	void makeSDLWindow(char const *name, int selected_display=0);
-	
-
 	void makeBuffer(int fd, size_t size, StreamInfo const &info, Buffer &buffer);
-	::
-	Display *display_;
+	// ::Display *display_;
 	EGLDisplay egl_display_;
-
-	EGLContext egl_context_;
-	EGLSurface egl_surface_;
 	std::map<int, Buffer> buffers_; // map the DMABUF's fd to the Buffer
 	int last_fd_;
 	bool first_time_;
@@ -207,7 +201,7 @@ void SdlPreview::gl_setup(int width, int height, int window_width, int window_he
 	"out vec4 FragColor;\n"
 	"uniform samplerExternalOES s;\n"
 	"void main() {\n"
-	"  FragColor = texture2D(s, texcoord);\n"
+	"  FragColor = texture2D(s, texcoord)+vec4(0.3,0.0,0.0,0.0);\n"
 	"}\n";
 	GLint fs_s = compile_shader(GL_FRAGMENT_SHADER, fs);
 	GLint prog = link_program(vs_s, fs_s);
@@ -243,12 +237,8 @@ SdlPreview::SdlPreview(Options const *options) : Preview(options), last_fd_(-1),
         std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
         throw std::runtime_error("Failed to initialize SDL");
     }
-	// makeSDLWindow("my sdl window");
-	// SDL_ShowWindow(sdl_window);
-	// SDL_RaiseWindow(sdl_window);
-	// SDL_SetWindowPosition(sdl_window, 100, 100); 
-	// SDL_UpdateWindowSurface(sdl_window);
-	
+	makeSDLWindow("my sdl window");
+
 	// printf("Window should now be visible\n");
 
 }
@@ -282,6 +272,7 @@ void SdlPreview::makeSDLWindow(char const *name, int selected_display)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+	// SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
 	SDL_DisplayMode *modes = NULL;
 
 	int num_displays = SDL_GetNumVideoDisplays();
@@ -325,12 +316,17 @@ void SdlPreview::makeSDLWindow(char const *name, int selected_display)
         SDL_Quit();
         throw std::runtime_error("Failed to create OpenGL context");
     }
- 	// We have to do eglMakeCurrent in the thread where it will run, but we must do it
-	// here temporarily so as to get the maximum texture size.
-	printf("making current in makesdl\n");
+	sdl_workercontext = SDL_GL_CreateContext(sdl_window);
 
-	egl_display_=eglGetCurrentDisplay();
 
+	printf("AHAHAHAHAHAHAHAHASDFASDFASF\n");
+
+	// egl_display_=eglGetCurrentDisplay();
+	SDL_ShowWindow(sdl_window);
+	SDL_RaiseWindow(sdl_window);
+	SDL_SetWindowPosition(sdl_window, 100, 100); 
+	SDL_UpdateWindowSurface(sdl_window);
+	SDL_GL_MakeCurrent(sdl_window, 0);
 
 
 }
@@ -378,6 +374,8 @@ void SdlPreview::makeBuffer(int fd, size_t size, StreamInfo const &info, Buffer 
 		EGL_SAMPLE_RANGE_HINT_EXT, range,
 		EGL_NONE
 	};
+	egl_display_=eglGetCurrentDisplay();
+
 	const char* vendor = eglQueryString(egl_display_, EGL_VENDOR);
 	const char* version = eglQueryString(egl_display_, EGL_VERSION);
 	std::cout << "Vendor: " << vendor << "\n";
@@ -423,22 +421,18 @@ void SdlPreview::Show(int fd, libcamera::Span<uint8_t> span, StreamInfo const &i
 	Buffer &buffer = buffers_[fd];
 	if (first_time_)
 	{
-		makeSDLWindow("my sdl window");
+		// makeSDLWindow("my sdl window");
 
-		SDL_ShowWindow(sdl_window);
-		SDL_RaiseWindow(sdl_window);
-		SDL_SetWindowPosition(sdl_window, 100, 100); 
-		SDL_UpdateWindowSurface(sdl_window);
-		
 		printf("Window should now be visible\n");
 		
-		sdl_workercontext = SDL_GL_CreateContext(sdl_window);
-		if (!sdl_workercontext) {
-			std::cerr << "(SDL_WORKERCONTEXT) OpenGL context could not be created! SDL_Error: " << SDL_GetError() << std::endl;
-			SDL_DestroyWindow(sdl_window);
-			SDL_Quit();
-			throw std::runtime_error("Failed to create OpenGL context");
-		}
+		// sdl_workercontext = SDL_GL_CreateContext(sdl_window);
+		// if (!sdl_workercontext) {
+		// 	std::cerr << "(SDL_WORKERCONTEXT) OpenGL context could not be created! SDL_Error: " << SDL_GetError() << std::endl;
+		// 	SDL_DestroyWindow(sdl_window);
+		// 	SDL_Quit();
+		// 	throw std::runtime_error("Failed to create OpenGL context");
+		// }
+
 		if (SDL_GL_MakeCurrent(sdl_window, sdl_workercontext) != 0) {
 			std::cerr << "SDL_GL_MakeCurrent failed: " << SDL_GetError() << std::endl;
 			throw std::runtime_error("SDL_GL_MakeCurrent failed: " + std::string(SDL_GetError()));
