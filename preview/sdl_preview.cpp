@@ -117,7 +117,7 @@ private:
 	int width_;
 	int height_;
 	SDL_GLContext sdl_context;
-	SDL_GLContext sdl_workercontext;
+
 	SDL_Window* sdl_window;
 	unsigned int max_image_width_;
 	unsigned int max_image_height_;
@@ -272,7 +272,7 @@ void SdlPreview::makeSDLWindow(char const *name, int selected_display)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-	// SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
+	SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
 	SDL_DisplayMode *modes = NULL;
 
 	int num_displays = SDL_GetNumVideoDisplays();
@@ -316,7 +316,7 @@ void SdlPreview::makeSDLWindow(char const *name, int selected_display)
         SDL_Quit();
         throw std::runtime_error("Failed to create OpenGL context");
     }
-	sdl_workercontext = SDL_GL_CreateContext(sdl_window);
+	// sdl_workercontext = SDL_GL_CreateContext(sdl_window);
 
 
 	printf("AHAHAHAHAHAHAHAHASDFASDFASF\n");
@@ -326,7 +326,9 @@ void SdlPreview::makeSDLWindow(char const *name, int selected_display)
 	SDL_RaiseWindow(sdl_window);
 	SDL_SetWindowPosition(sdl_window, 100, 100); 
 	SDL_UpdateWindowSurface(sdl_window);
-	SDL_GL_MakeCurrent(sdl_window, 0);
+	SDL_GL_MakeCurrent(sdl_window, sdl_context);
+	
+	SDL_GL_MakeCurrent(sdl_window, nullptr);
 
 
 }
@@ -421,19 +423,8 @@ void SdlPreview::Show(int fd, libcamera::Span<uint8_t> span, StreamInfo const &i
 	Buffer &buffer = buffers_[fd];
 	if (first_time_)
 	{
-		// makeSDLWindow("my sdl window");
-
 		printf("Window should now be visible\n");
-		
-		// sdl_workercontext = SDL_GL_CreateContext(sdl_window);
-		// if (!sdl_workercontext) {
-		// 	std::cerr << "(SDL_WORKERCONTEXT) OpenGL context could not be created! SDL_Error: " << SDL_GetError() << std::endl;
-		// 	SDL_DestroyWindow(sdl_window);
-		// 	SDL_Quit();
-		// 	throw std::runtime_error("Failed to create OpenGL context");
-		// }
-
-		if (SDL_GL_MakeCurrent(sdl_window, sdl_workercontext) != 0) {
+		if (SDL_GL_MakeCurrent(sdl_window, sdl_context) != 0) {
 			std::cerr << "SDL_GL_MakeCurrent failed: " << SDL_GetError() << std::endl;
 			throw std::runtime_error("SDL_GL_MakeCurrent failed: " + std::string(SDL_GetError()));
 		}
